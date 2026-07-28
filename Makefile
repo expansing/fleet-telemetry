@@ -7,10 +7,12 @@ ALPHA_IMAGE_NAME=fleet-telemetry-server-aplha:v0.0.1
 ALPHA_IMAGE_COMPRESSED_FILENAME := $(subst :,-, $(ALPHA_IMAGE_NAME))
 
 GO_FLAGS        ?=
-GO_FLAGS        += --ldflags 'extldflags="-static"'
-
 ifneq (,$(findstring darwin/arm,$(VERSION)))
-    GO_FLAGS += -tags dynamic
+	GO_FLAGS += -tags dynamic
+else ifneq (,$(findstring linux/arm,$(VERSION)))
+	GO_FLAGS += -tags dynamic
+else
+	GO_FLAGS += --ldflags 'extldflags="-static"'
 endif
 ifneq (,$(wildcard /etc/alpine-release))
     GO_FLAGS += -tags musl
