@@ -30,10 +30,14 @@ RUN ./configure --enable-static --disable-shared --disable-Werror
 RUN make -j$(nproc)
 RUN make install
 
-# Install rdkafka dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    librdkafka-dev \
-    && rm -rf /var/lib/apt/lists/*
+# build librdkafka (dep of kafka datastore, requires v2.3.0+)
+WORKDIR /build
+RUN wget https://github.com/edenhill/librdkafka/archive/refs/tags/v2.3.0.tar.gz
+RUN tar -xzvf v2.3.0.tar.gz
+WORKDIR /build/librdkafka-2.3.0
+RUN ./configure --enable-static --disable-shared
+RUN make -j$(nproc)
+RUN make install
 
 WORKDIR /go/src/fleet-telemetry
 
