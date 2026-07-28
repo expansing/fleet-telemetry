@@ -1,7 +1,9 @@
 # Start by building the application.
 FROM golang:1.26-bookworm AS build
 
-# Install build dependencies
+# Install build dependencies and C library development packages.  Using the
+# distribution packages for libsodium and libzmq keeps their headers and
+# pkg-config metadata aligned with the image architecture when buildx is used.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
@@ -10,25 +12,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     protobuf-compiler \
     libprotobuf-dev \
+    libsodium-dev \
+    libzmq3-dev \
+    libstdc++-12-dev \
     && rm -rf /var/lib/apt/lists/*
-
-# build libsodium (dep of libzmq)
-WORKDIR /build
-RUN wget https://github.com/jedisct1/libsodium/releases/download/1.0.19-RELEASE/libsodium-1.0.19.tar.gz
-RUN tar -xzvf libsodium-1.0.19.tar.gz
-WORKDIR /build/libsodium-stable
-RUN ./configure --disable-shared --enable-static
-RUN make -j$(nproc)
-RUN make install
-
-# build libzmq (dep of zmq datastore)
-WORKDIR /build
-RUN wget https://github.com/zeromq/libzmq/releases/download/v4.3.4/zeromq-4.3.4.tar.gz
-RUN tar -xvf zeromq-4.3.4.tar.gz
-WORKDIR /build/zeromq-4.3.4
-RUN ./configure --enable-static --disable-shared --disable-Werror
-RUN make -j$(nproc)
-RUN make install
 
 # build librdkafka (dep of kafka datastore, requires v2.3.0+)
 WORKDIR /build
@@ -44,7 +31,7 @@ WORKDIR /go/src/fleet-telemetry
 COPY . .
 ENV CGO_ENABLED=1
 ENV CGO_LDFLAGS="-lstdc++ -Wl,-rpath,/usr/local/lib"
-ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+ENV PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/local/lib/pkgconfig
 
 RUN make > /tmp/build.log 2>&1 || { \
     status=$?; \
