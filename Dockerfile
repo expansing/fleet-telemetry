@@ -8,6 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     libssl-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # build libsodium (dep of libzmq)
@@ -40,6 +41,8 @@ ENV CGO_ENABLED=1
 ENV CGO_LDFLAGS="-lstdc++ -Wl,-rpath,/usr/local/lib"
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.1
+RUN make generate-protos
 RUN make
 
 # hadolint ignore=DL3006
