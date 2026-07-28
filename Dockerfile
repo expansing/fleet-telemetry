@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libstdc++-12-dev \
     && rm -rf /var/lib/apt/lists/*
 
+
 WORKDIR /build
 
 RUN wget https://github.com/edenhill/librdkafka/archive/refs/tags/v2.3.0.tar.gz \
@@ -24,6 +25,7 @@ RUN ./configure --enable-static --disable-shared \
     && make -j$(nproc) \
     && make install
 
+
 WORKDIR /go/src/fleet-telemetry
 
 COPY . .
@@ -32,10 +34,12 @@ ENV CGO_ENABLED=1
 ENV CGO_LDFLAGS="-lstdc++ -Wl,-rpath,/usr/local/lib"
 ENV PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/local/lib/pkgconfig
 
+
 RUN make
 
 
 FROM debian:bookworm-slim
+
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libzmq5 \
@@ -48,8 +52,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgssapi-krb5-2 \
     && rm -rf /var/lib/apt/lists/*
 
+
 WORKDIR /
 
 COPY --from=build /go/bin/fleet-telemetry /
+
 
 CMD ["/fleet-telemetry", "-config", "/etc/fleet-telemetry/config.json"]
