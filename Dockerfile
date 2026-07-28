@@ -1,9 +1,5 @@
-# Start by building the application.
 FROM golang:1.26-bookworm AS build
 
-# Install build dependencies and C library development packages.  Using the
-# distribution packages for libsodium and libzmq keeps their headers and
-# pkg-config metadata aligned with the image architecture when buildx is used.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     pkg-config \
@@ -17,32 +13,43 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libstdc++-12-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# build librdkafka (dep of kafka datastore, requires v2.3.0+)
 WORKDIR /build
-RUN wget https://github.com/edenhill/librdkafka/archive/refs/tags/v2.3.0.tar.gz
-RUN tar -xzvf v2.3.0.tar.gz
+
+RUN wget https://github.com/edenhill/librdkafka/archive/refs/tags/v2.3.0.tar.gz \
+    && tar -xzvf v2.3.0.tar.gz
+
 WORKDIR /build/librdkafka-2.3.0
-RUN ./configure --enable-static --disable-shared
-RUN make -j$(nproc)
-RUN make install
+
+RUN ./configure --enable-static --disable-shared \
+    && make -j$(nproc) \
+    && make install
 
 WORKDIR /go/src/fleet-telemetry
 
 COPY . .
+
 ENV CGO_ENABLED=1
 ENV CGO_LDFLAGS="-lstdc++ -Wl,-rpath,/usr/local/lib"
 ENV PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/local/lib/pkgconfig
 
-RUN make > /tmp/build.log 2>&1 || { \
-    status=$?; \
-    echo "=== make failed; final build output ==="; \
-    tail -n 250 /tmp/build.log; \
-    exit "$status"; \
-    }
+RUN make
 
-# hadolint ignore=DL3006
-FROM gcr.io/distroless/cc-debian12:nonroot
+
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libzmq5 \
+    libsodium23 \
+    libpgm-5.3-0 \
+    libnorm1 \
+    libbsd0 \
+    libmd0 \
+    libkrb5-3 \
+    libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /
+
 COPY --from=build /go/bin/fleet-telemetry /
 
 CMD ["/fleet-telemetry", "-config", "/etc/fleet-telemetry/config.json"]
