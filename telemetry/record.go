@@ -12,8 +12,8 @@ import (
 	logrus "github.com/teslamotors/fleet-telemetry/logger"
 	"github.com/teslamotors/fleet-telemetry/protos"
 
-	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -22,7 +22,7 @@ const (
 	// SizeLimit maximum incoming payload size from the vehicle
 	SizeLimit = 1000000 // 1mb
 	// https://github.com/protocolbuffers/protobuf-go/blob/6d0a5dbd95005b70501b4cc2c5124dab07a1f4a0/encoding/protojson/well_known_types.go#L591
-	maxSecondsInDuration = 315576000000
+	maxSecondsInDuration         = 315576000000
 	unknownFieldsHexPrefixLength = 64
 	unknownFieldsNumbersLogLimit = 50
 )
@@ -320,13 +320,13 @@ func (record *Record) logUnknownProtoFields(message proto.Message) {
 	}
 
 	logInfo := logrus.LogInfo{
-		"vin":                      record.Vin,
-		"txid":                     record.Txid,
-		"record_type":              record.TxType,
-		"payload_size_bytes":       len(record.Payload()),
+		"vin":                       record.Vin,
+		"txid":                      record.Txid,
+		"record_type":               record.TxType,
+		"payload_size_bytes":        len(record.Payload()),
 		"unknown_fields_size_bytes": len(unknown),
-		"unknown_field_numbers":    fieldNumbers,
-		"unknown_fields_truncated": truncated,
+		"unknown_field_numbers":     fieldNumbers,
+		"unknown_fields_truncated":  truncated,
 		"unknown_fields_hex_prefix": hex.EncodeToString(unknown[:prefixLength]),
 	}
 	if parseErr != "" {
@@ -407,9 +407,9 @@ func (record *Record) logUnknownPayloadFieldKeys(payload *protos.Payload) {
 	}
 
 	logger.Log(logrus.WARN, "unknown_payload_field_keys_detected", logrus.LogInfo{
-		"vin":                       record.Vin,
-		"txid":                      record.Txid,
-		"record_type":               record.TxType,
+		"vin":                        record.Vin,
+		"txid":                       record.Txid,
+		"record_type":                record.TxType,
 		"unknown_payload_field_keys": unknownFieldKeys,
 	})
 }
