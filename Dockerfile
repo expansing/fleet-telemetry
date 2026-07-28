@@ -40,8 +40,8 @@ RUN make
 
 FROM debian:bookworm-slim
 
-
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    librdkafka1 \
     libzmq5 \
     libsodium23 \
     libpgm-5.3-0 \
@@ -50,6 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libmd0 \
     libkrb5-3 \
     libgssapi-krb5-2 \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 
