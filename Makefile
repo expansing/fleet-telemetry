@@ -63,13 +63,13 @@ clean:
 	find $(PROTO_DIR) -type f ! -name '*.proto' -delete
 
 generate-golang:
-	protoc --go_out=./ --go_opt=paths=source_relative $(PROTO_DIR)/*.proto
+	protoc -I=. -I=/usr/include --go_out=./ --go_opt=paths=source_relative $(PROTO_DIR)/*.proto
 
 generate-python:
-	protoc -I=$(PROTO_DIR) --python_out=$(PROTO_DIR)/python/ $(PROTO_DIR)/*.proto
+	protoc -I=$(PROTO_DIR) -I=/usr/include --python_out=$(PROTO_DIR)/python/ $(PROTO_DIR)/*.proto
 
 generate-ruby:
-	protoc --ruby_out=$(PROTO_DIR)/ruby/ --proto_path=$(PROTO_DIR) $(PROTO_FILES)
+	protoc --ruby_out=$(PROTO_DIR)/ruby/ --proto_path=$(PROTO_DIR) --proto_path=/usr/include $(PROTO_FILES)
 
 generate-protos: clean generate-golang generate-python generate-ruby
 
