@@ -1,8 +1,10 @@
 package telemetry
 
 import (
+	"encoding/hex"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -10,6 +12,7 @@ import (
 	logrus "github.com/teslamotors/fleet-telemetry/logger"
 	"github.com/teslamotors/fleet-telemetry/protos"
 
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -20,6 +23,8 @@ const (
 	SizeLimit = 1000000 // 1mb
 	// https://github.com/protocolbuffers/protobuf-go/blob/6d0a5dbd95005b70501b4cc2c5124dab07a1f4a0/encoding/protojson/well_known_types.go#L591
 	maxSecondsInDuration = 315576000000
+	unknownFieldsHexPrefixLength = 64
+	unknownFieldsNumbersLogLimit = 50
 )
 
 var (
@@ -157,6 +162,7 @@ func (record *Record) applyProtoRecordTransforms() error {
 		if err != nil {
 			return err
 		}
+		record.logUnknownProtoFields(message)
 		message.Vin = record.Vin
 		transformTimestamp(message)
 		record.PayloadBytes, err = proto.Marshal(message)
@@ -168,6 +174,7 @@ func (record *Record) applyProtoRecordTransforms() error {
 		if err != nil {
 			return err
 		}
+		record.logUnknownProtoFields(message)
 		message.Vin = record.Vin
 		record.PayloadBytes, err = proto.Marshal(message)
 		record.protoMessage = message
@@ -178,6 +185,8 @@ func (record *Record) applyProtoRecordTransforms() error {
 		if err != nil {
 			return err
 		}
+		record.logUnknownProtoFields(message)
+		record.logUnknownPayloadFieldKeys(message)
 		message.Vin = record.Vin
 		transformLocation(message)
 		transformScientificNotation(message)
@@ -190,6 +199,7 @@ func (record *Record) applyProtoRecordTransforms() error {
 		if err != nil {
 			return err
 		}
+		record.logUnknownProtoFields(message)
 		message.Vin = record.Vin
 		record.PayloadBytes, err = proto.Marshal(message)
 		record.protoMessage = message
@@ -290,4 +300,116 @@ func convertTimestamp(input *timestamppb.Timestamp) *timestamppb.Timestamp {
 		return input
 	}
 	return timestamppb.New(time.UnixMilli(input.GetSeconds()))
+}
+
+func (record *Record) logUnknownProtoFields(message proto.Message) {
+	logger := record.Serializer.Logger()
+	if logger == nil || message == nil {
+		return
+	}
+
+	unknown := message.ProtoReflect().GetUnknown()
+	if len(unknown) == 0 {
+		return
+	}
+
+	fieldNumbers, truncated, parseErr := decodeUnknownFieldNumbers(unknown, unknownFieldsNumbersLogLimit)
+	prefixLength := len(unknown)
+	if prefixLength > unknownFieldsHexPrefixLength {
+		prefixLength = unknownFieldsHexPrefixLength
+	}
+
+	logInfo := logrus.LogInfo{
+		"vin":                      record.Vin,
+		"txid":                     record.Txid,
+		"record_type":              record.TxType,
+		"payload_size_bytes":       len(record.Payload()),
+		"unknown_fields_size_bytes": len(unknown),
+		"unknown_field_numbers":    fieldNumbers,
+		"unknown_fields_truncated": truncated,
+		"unknown_fields_hex_prefix": hex.EncodeToString(unknown[:prefixLength]),
+	}
+	if parseErr != "" {
+		logInfo["unknown_fields_parse_error"] = parseErr
+	}
+
+	logger.Log(logrus.WARN, "unknown_proto_fields_detected", logInfo)
+}
+
+func decodeUnknownFieldNumbers(unknown []byte, maxFields int) ([]int32, bool, string) {
+	if maxFields <= 0 {
+		return nil, false, ""
+	}
+
+	fieldMap := make(map[int32]struct{})
+	b := unknown
+
+	for len(b) > 0 {
+		number, fieldType, tagLength := protowire.ConsumeTag(b)
+		if tagLength < 0 {
+			return sortedFieldNumbers(fieldMap), false, protowire.ParseError(tagLength).Error()
+		}
+
+		b = b[tagLength:]
+		valueLength := protowire.ConsumeFieldValue(number, fieldType, b)
+		if valueLength < 0 {
+			return sortedFieldNumbers(fieldMap), false, protowire.ParseError(valueLength).Error()
+		}
+
+		b = b[valueLength:]
+		if _, ok := fieldMap[int32(number)]; !ok {
+			fieldMap[int32(number)] = struct{}{}
+			if len(fieldMap) >= maxFields {
+				return sortedFieldNumbers(fieldMap), len(b) > 0, ""
+			}
+		}
+	}
+
+	return sortedFieldNumbers(fieldMap), false, ""
+}
+
+func sortedFieldNumbers(fieldMap map[int32]struct{}) []int32 {
+	if len(fieldMap) == 0 {
+		return nil
+	}
+
+	fields := make([]int32, 0, len(fieldMap))
+	for field := range fieldMap {
+		fields = append(fields, field)
+	}
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i] < fields[j]
+	})
+
+	return fields
+}
+
+func (record *Record) logUnknownPayloadFieldKeys(payload *protos.Payload) {
+	logger := record.Serializer.Logger()
+	if logger == nil || payload == nil {
+		return
+	}
+
+	unknownFieldKeyMap := make(map[int32]struct{})
+	for _, datum := range payload.GetData() {
+		if datum == nil {
+			continue
+		}
+		fieldKey := int32(datum.GetKey())
+		if _, isKnown := protos.Field_name[fieldKey]; !isKnown {
+			unknownFieldKeyMap[fieldKey] = struct{}{}
+		}
+	}
+
+	unknownFieldKeys := sortedFieldNumbers(unknownFieldKeyMap)
+	if len(unknownFieldKeys) == 0 {
+		return
+	}
+
+	logger.Log(logrus.WARN, "unknown_payload_field_keys_detected", logrus.LogInfo{
+		"vin":                       record.Vin,
+		"txid":                      record.Txid,
+		"record_type":               record.TxType,
+		"unknown_payload_field_keys": unknownFieldKeys,
+	})
 }

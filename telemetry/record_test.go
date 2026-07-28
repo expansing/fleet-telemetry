@@ -8,7 +8,10 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	githublogrus "github.com/sirupsen/logrus"
+	"github.com/sirupsen/logrus/hooks/test"
 
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -21,11 +24,12 @@ import (
 var _ = Describe("Socket handler test", func() {
 	var (
 		logger     *logrus.Logger
+		logHook    *test.Hook
 		serializer *telemetry.BinarySerializer
 	)
 
 	BeforeEach(func() {
-		logger, _ = logrus.NoOpLogger()
+		logger, logHook = logrus.NoOpLogger()
 		serializer = telemetry.NewBinarySerializer(
 			&telemetry.RequestIdentity{
 				DeviceID: "42",
@@ -379,6 +383,43 @@ var _ = Describe("Socket handler test", func() {
 			Expect(record.Payload()).To(Equal(data))
 		})
 	})
+
+	Describe("unknown telemetry logging", func() {
+		It("logs unknown top-level protobuf fields", func() {
+			payload := generatePayload("cybertruck", "42", nil)
+			payload = protowire.AppendTag(payload, protowire.Number(4096), protowire.VarintType)
+			payload = protowire.AppendVarint(payload, 1)
+
+			message := messages.StreamMessage{TXID: []byte("unknown-field-test"), SenderID: []byte("vehicle_device.42"), MessageTopic: []byte("V"), Payload: payload}
+			recordMsg, err := message.ToBytes()
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = telemetry.NewRecord(serializer, recordMsg, "1", false)
+			Expect(err).NotTo(HaveOccurred())
+
+			entry := findLogEntry(logHook, "unknown_proto_fields_detected")
+			Expect(entry).NotTo(BeNil())
+			Expect(entry.Data["record_type"]).To(Equal("V"))
+			Expect(entry.Data["unknown_field_numbers"]).To(Equal([]int32{4096}))
+		})
+
+		It("logs unknown payload enum keys", func() {
+			unknownKey := protos.Field(999999)
+			unknownDatum := stringDatum(unknownKey, "mystery")
+
+			message := messages.StreamMessage{TXID: []byte("unknown-key-test"), SenderID: []byte("vehicle_device.42"), MessageTopic: []byte("V"), Payload: generatePayload("cybertruck", "42", nil, unknownDatum)}
+			recordMsg, err := message.ToBytes()
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = telemetry.NewRecord(serializer, recordMsg, "1", false)
+			Expect(err).NotTo(HaveOccurred())
+
+			entry := findLogEntry(logHook, "unknown_payload_field_keys_detected")
+			Expect(entry).NotTo(BeNil())
+			Expect(entry.Data["record_type"]).To(Equal("V"))
+			Expect(entry.Data["unknown_payload_field_keys"]).To(Equal([]int32{999999}))
+		})
+	})
 })
 
 func generatePayload(vehicleName string, vin string, timestamp *timestamppb.Timestamp, extraData ...*protos.Datum) []byte {
@@ -423,4 +464,13 @@ func clone(o *protos.LocationValue) *protos.LocationValue {
 		return nil
 	}
 	return &protos.LocationValue{Latitude: o.Latitude, Longitude: o.Longitude}
+}
+
+func findLogEntry(hook *test.Hook, message string) *githublogrus.Entry {
+	for _, entry := range hook.AllEntries() {
+		if entry.Message == message {
+			return entry
+		}
+	}
+	return nil
 }

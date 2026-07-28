@@ -1,0 +1,64 @@
+name: Publish GHCR Unknown Logging
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      additional_tag:
+        description: "Optional extra tag to publish (example: test, rc1)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare image metadata
+        id: meta
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          SHA_TAG="sha-${GITHUB_SHA::12}"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "sha_tag=${SHA_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          tags: |
+            ${{ steps.meta.outputs.image }}:unknown-logging
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.sha_tag }}
+
+      - name: Push additional tag
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.additional_tag != '' }}
+        run: |
+          IMAGE="${{ steps.meta.outputs.image }}"
+          EXTRA_TAG="${{ github.event.inputs.additional_tag }}"
+          docker buildx imagetools create \
+            -t "${IMAGE}:${EXTRA_TAG}" \
+            "${IMAGE}:unknown-logging"
