@@ -44,7 +44,12 @@ ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.1
 RUN make generate-protos
-RUN make
+RUN make > /tmp/build.log 2>&1 || { \
+    status=$?; \
+    echo "=== make failed; final build output ==="; \
+    tail -n 250 /tmp/build.log; \
+    exit "$status"; \
+    }
 
 # hadolint ignore=DL3006
 FROM gcr.io/distroless/cc-debian12:nonroot

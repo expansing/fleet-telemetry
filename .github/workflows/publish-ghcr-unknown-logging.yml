@@ -18,6 +18,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-22.04
+    env:
+      BUILDKIT_PROGRESS: plain
     steps:
       - name: Checkout
         uses: actions/checkout@v4
