@@ -42,8 +42,6 @@ ENV CGO_ENABLED=1
 ENV CGO_LDFLAGS="-lstdc++ -Wl,-rpath,/usr/local/lib"
 ENV PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
 
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.1
-RUN make generate-protos
 RUN make > /tmp/build.log 2>&1 || { \
     status=$?; \
     echo "=== make failed; final build output ==="; \
