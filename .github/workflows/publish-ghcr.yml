@@ -1,4 +1,4 @@
-name: Publish GHCR Unknown Logging
+name: Publish GHCR
 
 on:
   push:
